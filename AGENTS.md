@@ -15,7 +15,7 @@ It is **not** a search demo and not a benchmark of query speed. It indexes, meas
 
 ```
 build.bat                             # dotnet build IndexingStorageLab.sln -c Release
-run.bat                               # build + launch the UI on http://127.0.0.1:5080/
+run.bat                               # build + launch the UI on http://127.0.0.1:5090/
 test.bat                              # offline test suite
 run-profile.bat                       # list headless profiles
 run-profile.bat smoke                 # 2 GB sanity run
@@ -103,6 +103,12 @@ Paths this machine uses, configured in the CLI profiles and the web defaults:
 | Corpus | `d:\Storage\Aspose` — 894,327 files, 415.2 GB, by format |
 | Sessions | `d:\Storage\Output\indexing-lab-sessions` |
 | Index output | `d:\Storage\Output\indexing-lab-index\<profile>` |
+| UI port | **5090**, not 5080 |
+
+**Port 5090 is deliberate.** `AsposeNetDocumentProcessor` owns 5080 on this machine. When both used
+5080, `run.bat` opened a browser at the *other* application while this one failed to bind, and the
+bind error scrolled past unnoticed. `run.bat` now refuses to start if the port is taken and names
+the process holding it; pass a port to override (`run.bat 5091`).
 
 `d:\Storage\govdocs\zipfiles` holds the raw Digital Corpora set (1000 archives, 310.6 GB) if a
 non-extracted corpus is ever needed. The walker takes any folder; nothing assumes a layout.

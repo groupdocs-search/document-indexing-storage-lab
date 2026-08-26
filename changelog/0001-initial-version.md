@@ -48,6 +48,16 @@ A 199 MB stratified sample of `d:\Storage\Aspose` (mixed .xls/.ppt/.doc/.pdf/.tx
 - **12.8% sits inside the 10–33% band** the customer expected. The 94% figure that started the
   thread came from an unoptimised 740-segment index.
 
+## Fixed
+
+- **Web host would not start.** Its `appsettings.json` contained unescaped Windows path separators,
+  so the configuration failed to parse. The project built cleanly the whole time, which is why it
+  went unnoticed: nothing had actually launched it.
+- **Port collision with AsposeNetDocumentProcessor.** Both used 5080. `run.bat` waits for the port
+  to answer and cannot tell whose application replied, so it opened a browser at the other tool
+  while this one failed to bind. Moved to 5090, and `run.bat` now refuses to start when the port is
+  occupied, naming the process that holds it.
+
 ## Known limits
 
 - No compare-sessions feature. The schema is designed for it; the UI is not written.

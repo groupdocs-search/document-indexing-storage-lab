@@ -57,7 +57,7 @@ setx GROUPDOCS_LIC_PATH "C:\path\to\GroupDocs.Total.lic"
 
 ```bat
 build.bat                        :: build everything in Release
-run.bat                          :: launch the UI and open a browser at 127.0.0.1:5080
+run.bat                          :: launch the UI and open a browser at 127.0.0.1:5090
 test.bat                         :: offline test suite
 run-profile.bat                  :: list the headless profiles
 run-profile.bat smoke            :: 2 GB sanity run
@@ -70,7 +70,7 @@ run-profile.bat corpora-30pct    :: the real 90 GB run
 
 ```bash
 dotnet run --project src/IndexingLab.Web -c Release
-# http://127.0.0.1:5080
+# http://127.0.0.1:5090
 ```
 
 Three pages: **Sessions** (history), **New run** (configure and start), **Live** (log + cancel).

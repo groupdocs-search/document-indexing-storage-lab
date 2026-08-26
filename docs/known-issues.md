@@ -40,6 +40,13 @@ and the extracted-text ratio silently disappears.
 On a large index with many segments this costs a directory enumeration per batch. It is small
 against extraction time, but it does grow with segment count.
 
+## The browser helper cannot identify the application
+
+`run.bat` waits for the port to accept a connection, then opens a browser. It has no way to check
+*whose* application answered. That is why the port is checked for being free before the host starts
+— without that guard, another app already on the port gets opened instead and the real failure (our
+Kestrel unable to bind) scrolls past. If you override the port, the same guard applies.
+
 ## Only one run at a time
 
 Deliberate — two indexers on one machine would contaminate both sets of memory figures. The UI
