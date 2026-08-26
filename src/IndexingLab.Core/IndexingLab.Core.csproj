@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>IndexingLab.Core</RootNamespace>
+    <AssemblyName>IndexingLab.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="GroupDocs.Search" />
+  </ItemGroup>
+</Project>

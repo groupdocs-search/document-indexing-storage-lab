@@ -1,0 +1,6 @@
+* text=auto eol=crlf
+*.sh text eol=lf
+*.cs text diff=csharp
+*.md text
+*.json text
+*.lic binary

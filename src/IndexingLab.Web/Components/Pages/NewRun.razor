@@ -1,0 +1,157 @@
+@page "/new"
+@inject RunnerService Runner
+@inject IConfiguration Config
+@inject NavigationManager Nav
+
+<h1>New run</h1>
+
+@if (Runner.IsRunning)
+{
+    <div class="banner running">
+        A run is already in progress &mdash; only one at a time, so measurements are not
+        contaminated by a second indexer on the same machine. <a href="live">Watch it</a>.
+    </div>
+}
+
+<div class="grid">
+    <section>
+        <h2>Corpus</h2>
+        <label>Label <input @bind="label" placeholder="30% Aspose, stop words on" /></label>
+        <label>Root folder <input @bind="rootPath" /></label>
+        <p class="muted">Any folder. All files underneath are enumerated, whatever the structure.</p>
+
+        <label>Source budget (GB) <input type="number" step="1" @bind="budgetGb" /></label>
+        <label>Max files (guard) <input type="number" step="1000" @bind="maxFiles" /></label>
+        <label>Max file size (MB) <input type="number" step="1" @bind="maxFileSizeMb" /></label>
+
+        <label>
+            Exclude extensions
+            <textarea rows="3" @bind="excludeExtensions"></textarea>
+        </label>
+        <p class="muted">
+            Space separated. Images and archives are excluded by default: they yield no text without
+            OCR, so indexing them inflates the source side of the size ratio while contributing
+            nothing to the index.
+        </p>
+
+        <label>
+            Include only extensions (blank = all not excluded)
+            <textarea rows="2" @bind="includeExtensions"></textarea>
+        </label>
+    </section>
+
+    <section>
+        <h2>Index settings</h2>
+        <label>Index type
+            <select @bind="indexType">
+                <option>NormalIndex</option>
+                <option>CompactIndex</option>
+                <option>MetadataIndex</option>
+            </select>
+        </label>
+        <label><input type="checkbox" @bind="useStopWords" /> Use stop words</label>
+        <label><input type="checkbox" @bind="useTextStorage" /> Store document text</label>
+        <p class="muted">
+            Text storage grows the index, but it is the only way to measure extracted text volume &mdash;
+            without it the &ldquo;index vs extracted text&rdquo; ratio cannot be computed.
+        </p>
+        <label>Text compression
+            <select @bind="textCompression">
+                <option>High</option><option>Normal</option><option>Low</option><option>No</option>
+            </select>
+        </label>
+        <label>Separator characters <input @bind="separatorCharacters" placeholder="e.g. 0123456789+/=" /></label>
+        <p class="muted">Reclassifies these as separators before indexing &mdash; the lever against runaway vocabulary.</p>
+
+        <label>Indexing threads <input type="number" step="1" @bind="threads" /></label>
+        <label><input type="checkbox" @bind="optimizeAtEnd" /> Run Optimize() at the end</label>
+        <p class="muted">
+            Merges segments, which collapses the term-offset overhead. At large vocabularies it is
+            memory-hungry; a failure is recorded in the session rather than losing the run.
+        </p>
+    </section>
+
+    <section>
+        <h2>Batching</h2>
+        <label>Batch size (MB) <input type="number" step="5" @bind="batchSizeMb" /></label>
+        <label>Max documents per batch <input type="number" step="100" @bind="maxDocsPerBatch" /></label>
+        <p class="muted">Byte-driven batching, matching the customer pipeline: flush on whichever limit hits first.</p>
+
+        <h2>Output</h2>
+        <label>Index folder <input @bind="indexFolder" /></label>
+        <p class="muted">Emptied before the run starts.</p>
+
+        @if (error is not null)
+        {
+            <div class="banner error">@error</div>
+        }
+
+        <button class="btn primary big" disabled="@Runner.IsRunning" @onclick="Start">Start run</button>
+    </section>
+</div>
+
+@code {
+    private string label = "run";
+    private string rootPath = @"d:\Storage\Aspose";
+    private int budgetGb = 90;
+    private int maxFiles = 400_000;
+    private int maxFileSizeMb = 64;
+    private string excludeExtensions = string.Join(' ', CorpusWalker.DefaultExcludedExtensions);
+    private string includeExtensions = string.Empty;
+    private string indexType = "NormalIndex";
+    private bool useStopWords = true;
+    private bool useTextStorage;
+    private string textCompression = "High";
+    private string separatorCharacters = string.Empty;
+    private int threads = 1;
+    private bool optimizeAtEnd = true;
+    private int batchSizeMb = 75;
+    private int maxDocsPerBatch = 2000;
+    private string indexFolder = @"d:\Storage\Output\indexing-lab-index";
+    private string? error;
+
+    protected override void OnInitialized()
+    {
+        rootPath = Config["Lab:DefaultCorpusPath"] ?? rootPath;
+        indexFolder = Config["Lab:DefaultIndexPath"] ?? indexFolder;
+    }
+
+    private void Start()
+    {
+        error = null;
+        try
+        {
+            RunConfiguration configuration = new()
+            {
+                CorpusRootPath = rootPath,
+                SourceBudgetBytes = (long)budgetGb * 1024 * 1024 * 1024,
+                MaxFiles = maxFiles,
+                MaxFileSizeBytes = (long)maxFileSizeMb * 1024 * 1024,
+                IncludeExtensions = Split(includeExtensions),
+                ExcludeExtensions = Split(excludeExtensions),
+                BatchSizeBytes = (long)batchSizeMb * 1024 * 1024,
+                MaxDocumentsPerBatch = maxDocsPerBatch,
+                IndexType = indexType,
+                UseStopWords = useStopWords,
+                UseTextStorage = useTextStorage,
+                TextStorageCompression = textCompression,
+                IndexingThreads = threads,
+                MaxIndexingReportCount = 0,
+                SeparatorCharacters = separatorCharacters,
+                OptimizeAtEnd = optimizeAtEnd,
+                IndexFolderPath = indexFolder,
+            };
+
+            Runner.Start(configuration, label);
+            Nav.NavigateTo("live");
+        }
+        catch (Exception exception)
+        {
+            error = exception.Message;
+        }
+    }
+
+    private static List<string> Split(string value) =>
+        [.. value.Split([' ', ',', ';', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries)
+                 .Select(e => e.StartsWith('.') ? e : "." + e)];
+}

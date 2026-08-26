@@ -1,0 +1,40 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, ubuntu-latest ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore IndexingStorageLab.sln
+
+      - name: Build
+        run: dotnet build IndexingStorageLab.sln --configuration Release --no-restore
+
+      # The offline suite is the only thing CI can honestly run. Profiling runs need a document
+      # corpus and a GroupDocs licence, neither of which exists on a hosted runner -- and an
+      # unlicensed run produces trial-capped numbers that look real but measure nothing.
+      - name: Test
+        run: dotnet test tests/IndexingLab.Tests --configuration Release --no-build --verbosity normal

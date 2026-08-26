@@ -1,0 +1,89 @@
+@page "/"
+@inject SessionStore Store
+@inject RunnerService Runner
+@inject NavigationManager Nav
+
+<h1>Sessions</h1>
+
+<p class="muted">
+    Stored in <code>@Store.RootPath</code> &mdash; one JSON file per run.
+    Every session records the GroupDocs.Search version, runtime, GC mode and a corpus
+    fingerprint, so runs on different product versions can be compared later.
+</p>
+
+@if (Runner.IsRunning)
+{
+    <div class="banner running">
+        A run is in progress. <a href="live">Watch it live</a>.
+    </div>
+}
+
+<div class="toolbar">
+    <button class="btn" @onclick="Reload">Refresh</button>
+    <a class="btn primary" href="new">New run</a>
+    <span class="muted">@sessions.Count session(s)</span>
+</div>
+
+@if (sessions.Count == 0)
+{
+    <p class="muted">No sessions yet. Start one from <a href="new">New run</a>.</p>
+}
+else
+{
+    <table>
+        <thead>
+        <tr>
+            <th>Started (UTC)</th>
+            <th>Label</th>
+            <th>Status</th>
+            <th>Search</th>
+            <th class="num">Docs</th>
+            <th class="num">Source</th>
+            <th class="num">Index</th>
+            <th class="num">Ratio</th>
+            <th class="num">Segments</th>
+            <th class="num">Terms</th>
+            <th class="num">Peak private</th>
+            <th class="num">Duration</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (SessionRecord s in sessions)
+        {
+            IndexStorageBreakdown? b = s.StorageAfterOptimize ?? s.StorageBeforeOptimize;
+            <tr class="clickable" @onclick="() => Open(s.Id)">
+                <td>@s.StartedUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@s.Label</td>
+                <td><span class="status @s.Status.ToLowerInvariant()">@s.Status</span></td>
+                <td>
+                    @s.Environment.SearchAssemblyVersion
+                    @if (!s.Environment.IsLicensed)
+                    {
+                        <span class="warn" title="Unlicensed run - document capped, figures not representative">UNLICENSED</span>
+                    }
+                </td>
+                <td class="num">@s.Outcome.DocumentsIndexed.ToString("N0")</td>
+                <td class="num">@Format.Bytes(s.Outcome.SourceBytesConsumed)</td>
+                <td class="num">@(b is null ? "-" : Format.Bytes(b.TotalBytes))</td>
+                <td class="num">@(b is null ? "-" : Format.Percent(b.RatioToSourceBytes))</td>
+                <td class="num">@(b?.SegmentCount.ToString() ?? "-")</td>
+                <td class="num">@(b is null ? "-" : b.EstimatedTermCount.ToString("N0"))</td>
+                <td class="num">@Format.Bytes(s.Outcome.PeakPrivateBytes)</td>
+                <td class="num">@Format.Duration(s.ElapsedSeconds)</td>
+                <td><a href="@($"session/{s.Id}")">open</a></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<SessionRecord> sessions = [];
+
+    protected override void OnInitialized() => Reload();
+
+    private void Reload() => sessions = [.. Store.List()];
+
+    private void Open(string id) => Nav.NavigateTo($"session/{id}");
+}

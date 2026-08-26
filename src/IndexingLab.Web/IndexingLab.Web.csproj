@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>IndexingLab.Web</RootNamespace>
+    <AssemblyName>IndexingLab.Web</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\IndexingLab.Core\IndexingLab.Core.csproj" />
+  </ItemGroup>
+</Project>

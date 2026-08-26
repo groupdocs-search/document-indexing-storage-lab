@@ -1,0 +1,247 @@
+@page "/session/{SessionId}"
+@inject SessionStore Store
+
+@if (session is null)
+{
+    <h1>Session not found</h1>
+    <p class="muted">No session with id <code>@SessionId</code> in @Store.RootPath.</p>
+}
+else
+{
+    <h1>@session.Label <span class="status @session.Status.ToLowerInvariant()">@session.Status</span></h1>
+    <p class="muted">
+        <code>@session.Id</code> &middot; started @session.StartedUtc.ToString("yyyy-MM-dd HH:mm:ss") UTC
+        &middot; @Format.Duration(session.ElapsedSeconds)
+    </p>
+
+    @if (!session.Environment.IsLicensed)
+    {
+        <div class="banner warn">
+            This run had no licence applied. Document count was capped by trial limits, so every
+            figure below is unrepresentative.
+        </div>
+    }
+    @if (session.FailureMessage is not null)
+    {
+        <div class="banner error">Failed: @session.FailureMessage</div>
+    }
+
+    <div class="grid">
+        <section>
+            <h2>Environment</h2>
+            <dl>
+                <dt>GroupDocs.Search</dt><dd>@session.Environment.SearchAssemblyVersion</dd>
+                <dt>Runtime</dt><dd>@session.Environment.RuntimeVersion</dd>
+                <dt>OS / arch</dt><dd>@session.Environment.OperatingSystem (@session.Environment.ProcessArchitecture)</dd>
+                <dt>Machine</dt><dd>@session.Environment.MachineName, @session.Environment.ProcessorCount cores</dd>
+                <dt>Server GC</dt><dd>@session.Environment.IsServerGC</dd>
+                <dt>Build</dt><dd>@session.Environment.BuildConfiguration</dd>
+                <dt>Available memory</dt><dd>@Format.Bytes(session.Environment.TotalPhysicalMemoryBytes)</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>Configuration</h2>
+            <dl>
+                <dt>Corpus</dt><dd><code>@session.Configuration.CorpusRootPath</code></dd>
+                <dt>Budget</dt><dd>@Format.Bytes(session.Configuration.SourceBudgetBytes) / @session.Configuration.MaxFiles.ToString("N0") files</dd>
+                <dt>Batch</dt><dd>@Format.Bytes(session.Configuration.BatchSizeBytes) or @session.Configuration.MaxDocumentsPerBatch docs</dd>
+                <dt>Index type</dt><dd>@session.Configuration.IndexType</dd>
+                <dt>Stop words</dt><dd>@session.Configuration.UseStopWords</dd>
+                <dt>Text storage</dt><dd>@(session.Configuration.UseTextStorage ? session.Configuration.TextStorageCompression : "off")</dd>
+                <dt>Threads</dt><dd>@session.Configuration.IndexingThreads</dd>
+                <dt>Separators</dt><dd>@(string.IsNullOrEmpty(session.Configuration.SeparatorCharacters) ? "(default alphabet)" : session.Configuration.SeparatorCharacters)</dd>
+                <dt>Optimize at end</dt><dd>@session.Configuration.OptimizeAtEnd</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>Outcome</h2>
+            <dl>
+                <dt>Documents indexed</dt><dd>@session.Outcome.DocumentsIndexed.ToString("N0") of @session.Outcome.DocumentsAttempted.ToString("N0")</dd>
+                <dt>Extraction errors</dt><dd>@session.Outcome.ExtractionErrors.ToString("N0")</dd>
+                <dt>Source consumed</dt><dd>@Format.Bytes(session.Outcome.SourceBytesConsumed)</dd>
+                <dt>Batches</dt><dd>@session.Outcome.BatchesCommitted</dd>
+                <dt>Throughput</dt><dd>@session.Outcome.ThroughputMBPerSecond.ToString("F1") MB/s</dd>
+                <dt>Total allocated</dt><dd>@Format.Bytes(session.Outcome.TotalAllocatedBytes)</dd>
+                <dt>Peak private</dt><dd>@Format.Bytes(session.Outcome.PeakPrivateBytes)</dd>
+                <dt>Retained heap / LOH</dt><dd>@Format.Bytes(session.Outcome.RetainedManagedHeapBytes) / @Format.Bytes(session.Outcome.RetainedLargeObjectHeapBytes)</dd>
+                <dt>GC gen0/1/2</dt><dd>@session.Outcome.Gen0Collections / @session.Outcome.Gen1Collections / @session.Outcome.Gen2Collections</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>Corpus fingerprint</h2>
+            <dl>
+                <dt>Files selected</dt><dd>@session.Corpus.FilesSelected.ToString("N0")</dd>
+                <dt>Bytes selected</dt><dd>@Format.Bytes(session.Corpus.SourceBytesSelected)</dd>
+                <dt>Selection hash</dt><dd><code class="hash">@session.Corpus.SelectionHash</code></dd>
+            </dl>
+            <p class="muted">Two sessions with the same hash indexed exactly the same files.</p>
+            @if (session.Corpus.ByExtension.Count > 0)
+            {
+                <table class="compact">
+                    <thead><tr><th>ext</th><th class="num">files</th><th class="num">bytes</th></tr></thead>
+                    <tbody>
+                    @foreach (ExtensionBucket e in session.Corpus.ByExtension.Take(15))
+                    {
+                        <tr><td>@e.Extension</td><td class="num">@e.FileCount.ToString("N0")</td><td class="num">@Format.Bytes(e.Bytes)</td></tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </div>
+
+    <h2>Index storage</h2>
+    @if (session.OptimizeFailureMessage is not null)
+    {
+        <div class="banner warn">Optimize() did not complete: @session.OptimizeFailureMessage</div>
+    }
+    <table>
+        <thead>
+        <tr>
+            <th>Component</th>
+            <th class="num">Before Optimize</th>
+            <th class="num">Share</th>
+            <th class="num">After Optimize</th>
+            <th class="num">Share</th>
+        </tr>
+        </thead>
+        <tbody>
+        @RenderRow("Postings (index*.body)", b => b.PostingsBytes)
+        @RenderRow("Term offsets (index*.head)", b => b.TermOffsetBytes)
+        @RenderRow("Term dictionary (index1.info)", b => b.TermDictionaryBytes)
+        @RenderRow("Document metadata (index.info)", b => b.DocumentMetadataBytes)
+        @RenderRow("Text storage", b => b.TextStorageBytes)
+        @RenderRow("Dictionaries + other", b => b.DictionaryFileBytes + b.ImageDataBytes + b.OtherBytes)
+        <tr class="total">
+            <td>Total</td>
+            <td class="num">@Bytes(before?.TotalBytes)</td>
+            <td class="num">100%</td>
+            <td class="num">@Bytes(after?.TotalBytes)</td>
+            <td class="num">@(after is null ? "" : "100%")</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <div class="grid">
+        <section>
+            <h2>Key figures</h2>
+            <dl>
+                <dt>Index / source</dt>
+                <dd>
+                    @(before is null ? "-" : Format.Percent(before.RatioToSourceBytes))
+                    @if (after is not null)
+                    {
+                        <text> &rarr; <strong>@Format.Percent(after.RatioToSourceBytes)</strong> after Optimize</text>
+                    }
+                </dd>
+                <dt>Index / extracted text</dt>
+                <dd>@(before?.RatioToExtractedText is null ? "n/a (text storage off)" : Format.Percent(before.RatioToExtractedText.Value))</dd>
+                <dt>Segments</dt>
+                <dd>@(before?.SegmentCount.ToString() ?? "-")@(after is null ? "" : $" → {after.SegmentCount}")</dd>
+                <dt>Vocabulary</dt>
+                <dd>@(before is null ? "-" : before.EstimatedTermCount.ToString("N0")) terms</dd>
+                <dt>Recoverable .head waste</dt>
+                <dd>@(before is null ? "-" : Format.Bytes(before.RecoverableTermOffsetBytes))</dd>
+            </dl>
+        </section>
+
+        <section>
+            <h2>Errors (first @session.Errors.Count)</h2>
+            @if (session.Errors.Count == 0)
+            {
+                <p class="muted">None.</p>
+            }
+            else
+            {
+                <ul class="errors">
+                    @foreach (string e in session.Errors)
+                    {
+                        <li>@e</li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
+
+    <h2>Timeline (@session.Timeline.Count samples)</h2>
+    <table class="compact scroll">
+        <thead>
+        <tr>
+            <th class="num">batch</th><th class="num">elapsed</th><th class="num">docs</th>
+            <th class="num">source</th><th class="num">index</th><th class="num">segs</th>
+            <th class="num">allocated</th><th class="num">private</th><th class="num">LOH</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (TimelineSample t in session.Timeline)
+        {
+            <tr>
+                <td class="num">@t.Batch</td>
+                <td class="num">@Format.Duration(t.ElapsedSeconds)</td>
+                <td class="num">@t.DocumentsIndexed.ToString("N0")</td>
+                <td class="num">@Format.Bytes(t.SourceBytesConsumed)</td>
+                <td class="num">@Format.Bytes(t.IndexBytesOnDisk)</td>
+                <td class="num">@t.SegmentCount</td>
+                <td class="num">@Format.Bytes(t.AllocatedBytes)</td>
+                <td class="num">@Format.Bytes(t.PrivateBytes)</td>
+                <td class="num">@Format.Bytes(t.LargeObjectHeapBytes)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public string SessionId { get; set; } = string.Empty;
+
+    private SessionRecord? session;
+    private IndexStorageBreakdown? before;
+    private IndexStorageBreakdown? after;
+
+    protected override void OnParametersSet()
+    {
+        session = Store.Load(SessionId);
+        before = session?.StorageBeforeOptimize;
+        after = session?.StorageAfterOptimize;
+    }
+
+    private static string Bytes(long? value) => value is null ? "-" : Format.Bytes(value.Value);
+
+    private RenderFragment RenderRow(string name, Func<IndexStorageBreakdown, long> pick) => builder =>
+    {
+        long? b = before is null ? null : pick(before);
+        long? a = after is null ? null : pick(after);
+
+        builder.OpenElement(0, "tr");
+        builder.OpenElement(1, "td");
+        builder.AddContent(2, name);
+        builder.CloseElement();
+
+        builder.OpenElement(3, "td");
+        builder.AddAttribute(4, "class", "num");
+        builder.AddContent(5, Bytes(b));
+        builder.CloseElement();
+
+        builder.OpenElement(6, "td");
+        builder.AddAttribute(7, "class", "num");
+        builder.AddContent(8, Share(b, before?.TotalBytes));
+        builder.CloseElement();
+
+        builder.OpenElement(9, "td");
+        builder.AddAttribute(10, "class", "num");
+        builder.AddContent(11, Bytes(a));
+        builder.CloseElement();
+
+        builder.OpenElement(12, "td");
+        builder.AddAttribute(13, "class", "num");
+        builder.AddContent(14, Share(a, after?.TotalBytes));
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static string Share(long? part, long? total) =>
+        part is null || total is null || total == 0 ? "" : Format.Percent((double)part.Value / total.Value);
+}

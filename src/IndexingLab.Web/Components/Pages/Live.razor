@@ -1,0 +1,51 @@
+@page "/live"
+@implements IDisposable
+@inject RunnerService Runner
+@inject NavigationManager Nav
+
+<h1>Live</h1>
+
+@if (!Runner.IsRunning)
+{
+    <div class="banner">
+        No run in progress.
+        @if (Runner.ActiveSessionId is not null)
+        {
+            <a href="@($"session/{Runner.ActiveSessionId}")">Open the last session</a>
+        }
+        else
+        {
+            <a href="new">Start one</a>
+        }
+    </div>
+}
+else
+{
+    <div class="toolbar">
+        <span class="status running">Running</span>
+        <button class="btn danger" @onclick="() => Runner.Cancel()">Cancel</button>
+        <span class="muted">The run continues if you close this page.</span>
+    </div>
+}
+
+<pre class="log">@string.Join('\n', Runner.RecentLog)</pre>
+
+@code {
+    private Timer? timer;
+
+    protected override void OnInitialized()
+    {
+        Runner.StateChanged += OnStateChanged;
+        // The log can move faster than a render is worth; poll on a slow timer instead of
+        // re-rendering on every single line.
+        timer = new Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+    }
+
+    private void OnStateChanged() { }
+
+    public void Dispose()
+    {
+        Runner.StateChanged -= OnStateChanged;
+        timer?.Dispose();
+    }
+}

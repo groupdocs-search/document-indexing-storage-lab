@@ -1,0 +1,33 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+    <!--
+      Globalization-invariant mode must stay OFF. GroupDocs.Search resolves cultures while
+      extracting text; under invariant mode legacy spreadsheet extraction raises
+      CultureNotFoundException for every .xls in the corpus. That surfaces as an inflated
+      extraction-error count and a silently smaller index, which is indistinguishable from a
+      real product regression once it lands in a session record.
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>IndexingStorageLab</Product>
+    <Company>Aspose</Company>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!--
+    Server GC is left at whatever the project SDK chooses. Microsoft.NET.Sdk.Web turns it on,
+    which is what the customer in the originating thread runs, so profiling under it is
+    representative. Every session record stamps the value actually in effect.
+  -->
+
+</Project>
