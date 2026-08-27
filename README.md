@@ -8,6 +8,34 @@ Built to answer a customer question — *why is the index 50–94% of the source
 to outlive it: every session records the product version, runtime and GC mode, so the same corpus
 can be re-run on a future Search release and the results compared.
 
+## What a run looks like
+
+The **Live** screen while a run is in flight — and after it finishes, since the record stays on
+screen. Numbers on the shot map to the table below.
+
+![The Live screen of a run, with numbered callouts](docs/images/live-run.png)
+
+| | Block | What it means |
+|---:|---|---|
+| **1** | Run status | State, profile name, elapsed time, and a link to the saved session. The run lives in a hosted singleton service, not in the Blazor circuit — closing the tab, reloading, or losing the websocket does not stop or corrupt it. |
+| **2** | Size budget | Source bytes selected against the configured budget, with documents processed and extraction errors underneath. Extraction errors are counted and carried on from, never fatal — 53 of 2,804 files here. |
+| **3** | Index / source | The headline ratio: index bytes written ÷ source bytes indexed. Only meaningful alongside the format mix that produced it — see [First results](#first-results). |
+| **4** | Documents | Documents indexed so far, and the rate per second. |
+| **5** | Throughput | Source megabytes consumed per second. Extraction, not indexing, dominates this. |
+| **6** | Vocabulary | Unique terms across the whole index, derived as largest `.head` ÷ 4 — each `.head` is a flat `int[]` indexed by term id, so its length *is* the vocabulary. |
+| **7** | Segments | Segment count, and the total bytes of `.head` offset tables. Every segment carries a slot for every term in the whole index, present in that segment or not, so segment count multiplies that cost — this is exactly what `Optimize()` collapses. |
+| **8** | Private bytes | Current and peak process private bytes. Sampled on a timer, never at batch boundaries: batch sizes differ between configurations, and a peak read only at commit points measures the batching cadence instead of the memory. |
+| **9** | Sparklines | One point per committed batch — index vs. source, ratio over time, vocabulary growth, private bytes vs. Large Object Heap. Shape matters more than the endpoint: a ratio still climbing at the end means the slice was too small. |
+| **10** | Series legend | Solid line is the primary series, the faint line behind it is the comparison series. |
+| **11** | Log | One line per committed batch — docs, source, index, segments, private bytes, elapsed. The same stream the CLI prints, so a headless run is diagnosable from its console output alone. |
+| **12** | Licence line | First line of every run, and the one to read first. |
+
+> The shot above is an **unlicensed** smoke run, kept deliberately because it shows what that looks
+> like. Trial mode caps indexing while the tool still produces a complete, plausible-looking
+> session — which is why the index at **(3)** flatlines at 4.2 MB and the ratio collapses to 0.2%.
+> Nothing here is a real measurement. Sessions stamp `IsLicensed` and the UI marks them, but set a
+> licence and do not rely on noticing.
+
 ## Why it exists
 
 An index folder is opaque. The only way we could diagnose a customer's 38 GB index was because they
@@ -26,7 +54,7 @@ gives vocabulary size for free (largest `.head` ÷ 4) and makes the recoverable 
 
 ## First results
 
-A 199 MB stratified sample of `d:\Storage\Aspose` (mixed .xls/.ppt/.doc/.pdf/.txt/.html):
+A 199 MB stratified sample of `d:\Storage` (mixed .xls/.ppt/.doc/.pdf/.txt/.html):
 
 | | before `Optimize()` | after |
 |---|---:|---:|
@@ -47,22 +75,43 @@ Two things already worth knowing:
 ## Running it
 
 Set a licence first — an unlicensed run is document-capped and every figure becomes meaningless.
-The session records whether one was applied. See [`.env.example`](.env.example).
+The session records whether one was applied. `GROUPDOCS_SEARCH_LIC_PATH` is the only licence setting and
+must be the **full path to a `.lic` file** — there is no folder fallback. See
+[`.env.example`](.env.example).
 
 ```bat
-setx GROUPDOCS_LIC_PATH "C:\path\to\GroupDocs.Total.lic"
+setx GROUPDOCS_SEARCH_LIC_PATH "C:\path\to\GroupDocs.Total.lic"
 ```
+
+### Point it at a corpus
+
+The committed configuration ships **portable relative defaults** so a fresh clone runs anywhere.
+Tell it where your documents are — any folder, any layout, everything underneath is enumerated:
+
+```bat
+setx INDEXING_LAB_CORPUS "D:\my\documents"
+```
+
+Or copy `src/IndexingLab.Web/appsettings.local.json.example` to `appsettings.local.json`
+(git-ignored) and put absolute paths there. Without a corpus the CLI stops with a message telling
+you exactly this rather than failing obscurely.
 
 ### Quick start
 
 ```bat
 build.bat                        :: build everything in Release
-run.bat                          :: launch the UI and open a browser at 127.0.0.1:5090
+run.bat                          :: launch the UI, open a browser at 127.0.0.1:5090
+run.bat 5091                     :: ... on a different port
+stop.bat                         :: stop a running lab host
 test.bat                         :: offline test suite
 run-profile.bat                  :: list the headless profiles
-run-profile.bat smoke            :: 2 GB sanity run
-run-profile.bat corpora-30pct    :: the real 90 GB run
+run-profile.bat smoke            :: small sanity run
+run-profile.bat corpora-30pct    :: a long baseline run
 ```
+
+A running host holds the build output, so `run.bat` and `build.bat` fail while one is up — that is
+ordinary file locking, not a fault. `run.bat` detects it and offers to stop it; `stop.bat` does the
+same on its own.
 
 ### Web UI
 
@@ -75,6 +124,7 @@ dotnet run --project src/IndexingLab.Web -c Release
 
 Three pages: **Sessions** (history), **New run** (configure and start), **Live** (log + cancel).
 The run lives in a hosted service, not in the Blazor circuit — closing the browser does not stop it.
+[What a run looks like](#what-a-run-looks-like) walks the Live screen block by block.
 
 ### Headless
 
@@ -115,12 +165,12 @@ Each session carries what is needed to judge whether two runs are comparable at 
 
 **Sampling is stratified by default.** A sorted sequential walk of a corpus organised by format
 fills the budget from the alphabetically first folders and never reaches the rest — a 90 GB budget on
-`d:\Storage\Aspose` would be all HTML and PDF. Stratified round-robins across the immediate
+`d:\Storage` would be all HTML and PDF. Stratified round-robins across the immediate
 subfolders so the mix stays representative at any budget. Set `SamplingMode: "Sequential"` if you
 specifically want the sorted walk.
 
 **Images and archives are excluded by default.** They yield no text without OCR, so indexing them
-inflates the source side of the ratio while contributing nothing to the index. `d:\Storage\Aspose`
+inflates the source side of the ratio while contributing nothing to the index. `d:\Storage`
 holds 38.9 GB of images — including them would distort the headline number badly.
 
 **Runs are bounded by a size budget with a file-count guard.** Size is primary because the question
@@ -145,6 +195,7 @@ src/IndexingLab.Core/
 src/IndexingLab.Web/        Blazor Server UI + hosted runner
 src/IndexingLab.Cli/        headless runner + profiles
 tests/IndexingLab.Tests/    offline suite - no corpus, no licence, no network
+docs/images/                screenshots used by this README
 ```
 
 ## Documentation
