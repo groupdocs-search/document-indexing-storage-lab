@@ -8,29 +8,17 @@ namespace IndexingLab.Core;
 /// </summary>
 public static class LicenseHelper
 {
-    public const string PrimaryVariable = "GROUPDOCS_LIC_PATH";
-    public const string FallbackFolderVariable = "LIC_PATH";
-    private const string FallbackRelativePath = "Conholdate/Total/Subscription/Valid/Conholdate.Total.Product.Family.lic";
+    /// <summary>
+    /// The only source of a licence: the full path to a <c>.lic</c> file. There is deliberately no
+    /// folder-plus-convention fallback -- a wrong guess there produces an unlicensed run that still
+    /// looks complete.
+    /// </summary>
+    public const string PrimaryVariable = "GROUPDOCS_SEARCH_LIC_PATH";
 
     public static bool TryApply(out string note)
     {
-        string? path = Environment.GetEnvironmentVariable(PrimaryVariable);
-
-        if (string.IsNullOrWhiteSpace(path))
+        if (!TryResolvePath(Environment.GetEnvironmentVariable(PrimaryVariable), File.Exists, out string path, out note))
         {
-            string? folder = Environment.GetEnvironmentVariable(FallbackFolderVariable);
-            if (!string.IsNullOrWhiteSpace(folder))
-            {
-                string relative = FallbackRelativePath
-                    .Replace('/', Path.DirectorySeparatorChar)
-                    .Replace('\\', Path.DirectorySeparatorChar);
-                path = Path.Combine(folder, relative);
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            note = $"NO LICENCE - set {PrimaryVariable}. Trial limits apply and results are NOT representative.";
             return false;
         }
 
@@ -45,5 +33,33 @@ public static class LicenseHelper
             note = $"Licence failed from '{path}': {exception.Message}";
             return false;
         }
+    }
+
+    /// <summary>
+    /// Decides which file to license from, with no GroupDocs dependency so the offline test suite
+    /// can pin it without loading a product assembly.
+    /// </summary>
+    public static bool TryResolvePath(string? configuredPath, Func<string, bool> fileExists, out string path, out string note)
+    {
+        path = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(configuredPath))
+        {
+            note = $"NO LICENCE - {PrimaryVariable} is not set. Trial limits apply and results are NOT representative.";
+            return false;
+        }
+
+        string candidate = configuredPath.Trim();
+
+        if (!fileExists(candidate))
+        {
+            note = $"NO LICENCE - {PrimaryVariable} points at '{candidate}', which does not exist. "
+                 + "Trial limits apply and results are NOT representative.";
+            return false;
+        }
+
+        path = candidate;
+        note = string.Empty;
+        return true;
     }
 }
