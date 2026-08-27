@@ -21,12 +21,10 @@ if "%~1"=="" (
   exit /b 0
 )
 
-if "%GROUPDOCS_LIC_PATH%"=="" (
-  if "%LIC_PATH%"=="" (
-    echo WARNING: no licence environment variable set. Trial limits will cap the run
-    echo          and every figure it reports will be unrepresentative.
-    echo.
-  )
+if "%GROUPDOCS_SEARCH_LIC_PATH%"=="" (
+  echo WARNING: GROUPDOCS_SEARCH_LIC_PATH is not set ^(full path to a .lic file^). Trial limits
+  echo          will cap the run and every figure it reports will be unrepresentative.
+  echo.
 )
 
 dotnet run --project src\IndexingLab.Cli -c Release -- %*
