@@ -12,5 +12,12 @@ coding agents. Read it first.
 | [docs/backlog.md](docs/backlog.md) | Wanted capability, ordered by what unblocks the most. Includes what was rejected and why. |
 | [changelog/](changelog/) | One numbered file per version. Start at [0001-initial-version.md](changelog/0001-initial-version.md). |
 
-Two standing constraints: **do not commit or push** without being asked, and **every backend
-capability gets unit tests**, not only changed behaviour.
+## NEVER COMMIT
+
+Do not run `git commit` or `git push` unless the user explicitly asks in that message. Finishing
+work is not a request to commit it. Leave changes in the working tree and report what is ready.
+Permission given for one commit does not carry to the next. See the box at the top of
+[AGENTS.md](AGENTS.md).
+
+Second standing constraint: **every backend capability gets unit tests**, not only changed
+behaviour.
