@@ -142,6 +142,26 @@ public sealed class IndexStorageAnalyzerTests : IDisposable
     }
 
     [Fact]
+    public void TextArchiveIsRecognisedInTheSourceFolder()
+    {
+        // The product writes stored text as numbered .dat files under "Source". Classifying them
+        // as dictionary side-files instead would inflate the index total and null the
+        // extracted-text ratio - which is exactly what happened on a real 20 GB run.
+        Directory.CreateDirectory(Path.Combine(folder, "Source"));
+        File.WriteAllBytes(Path.Combine(folder, "Source", "0.dat"), new byte[300]);
+        File.WriteAllBytes(Path.Combine(folder, "Source", "1.dat"), new byte[200]);
+        WriteFile("index0.body", 1000);
+        WriteFile("indexAlphabet.term", 50);
+
+        IndexStorageBreakdown b = IndexStorageAnalyzer.Analyze(folder, 4000, textStorageEnabled: true);
+
+        Assert.Equal(500, b.TextStorageBytes);
+        Assert.Equal(50, b.DictionaryFileBytes);
+        Assert.NotNull(b.RatioToExtractedText);
+        Assert.Equal(2.1, b.RatioToExtractedText!.Value, 6);
+    }
+
+    [Fact]
     public void MissingFolderYieldsAnEmptyBreakdownRatherThanThrowing()
     {
         IndexStorageBreakdown b = IndexStorageAnalyzer.Analyze(
