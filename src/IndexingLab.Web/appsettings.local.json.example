@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy to appsettings.local.json (git-ignored) and set your own paths. This file exists because the committed appsettings.json ships portable relative defaults so a fresh clone runs anywhere; put absolute, machine-specific values here instead of editing the committed file. Backslashes must be doubled in JSON -- or just use forward slashes, which Windows accepts.",
+
+  "Urls": "http://127.0.0.1:5090",
+
+  "Lab": {
+    "SessionsPath": "D:\\lab\\sessions",
+    "DefaultCorpusPath": "D:\\my\\documents",
+    "DefaultIndexPath": "D:\\lab\\index"
+  }
+}
