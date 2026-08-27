@@ -11,6 +11,20 @@ release and compared.
 
 It is **not** a search demo and not a benchmark of query speed. It indexes, measures, and stops.
 
+---
+
+> ## NEVER COMMIT
+>
+> Do not run `git commit` or `git push` unless the user explicitly asks for it **in that message**.
+> Finishing work is not a request to commit it. Leave changes in the working tree, say what is
+> ready, and let the user decide what becomes a commit and when.
+>
+> This holds even when the change is small, the build is green, the tests pass, a plan or checklist
+> says to commit, or a commit was authorised earlier in the same session. Earlier permission does
+> not carry forward.
+
+---
+
 ## Commands
 
 ```
@@ -57,7 +71,7 @@ temp directory and asserts against them, and it never loads a GroupDocs assembly
 
 3. **Sampling is stratified by default.** A sorted sequential walk of a corpus organised by format
    fills the budget from the alphabetically first folder and never reaches the rest. On
-   `d:\Storage\Aspose` that produced a **57.9%** size ratio from an HTML-only slice where the
+   `d:\Storage` that produced a **57.9%** size ratio from an HTML-only slice where the
    stratified mix gave **15.3%**. A ratio taken from an unrepresentative slice is worse than no
    ratio, because it looks like an answer. `CorpusWalkerTests` pins both modes.
 
@@ -81,7 +95,7 @@ temp directory and asserts against them, and it never loads a GroupDocs assembly
 
 8. **Images and archives are excluded by default.** They yield no text without OCR, so indexing them
    inflates the source side of the ratio while contributing nothing to the index.
-   `d:\Storage\Aspose` holds 38.9 GB of images.
+   `d:\Storage` holds 38.9 GB of images.
 
 9. **`InvariantGlobalization` stays off.** Under invariant mode legacy `.xls` extraction raises
    `CultureNotFoundException` for every such file, which shows up as extraction errors and a
@@ -93,22 +107,19 @@ temp directory and asserts against them, and it never loads a GroupDocs assembly
 
 ## Environment
 
-Licence is read from `GROUPDOCS_LIC_PATH` (full path to a `.lic`), falling back to `LIC_PATH`
-(a licences *folder*, the internal convention). See `.env.example`.
+Licence is read from `GROUPDOCS_SEARCH_LIC_PATH` only — the full path to a `.lic` file. There is no
+folder-convention fallback: an unset variable or a missing file yields an unlicensed run, which
+`LicenseHelper.TryApply` reports and `SessionRecord` stamps. See `.env.example`.
 
 Paths this machine uses, configured in the CLI profiles and the web defaults:
 
 | What | Where |
 |---|---|
-| Corpus | `d:\Storage\Aspose` — 894,327 files, 415.2 GB, by format |
+| Corpus | `d:\Storage` — 894,327 files, 415.2 GB, by format |
 | Sessions | `d:\Storage\Output\indexing-lab-sessions` |
 | Index output | `d:\Storage\Output\indexing-lab-index\<profile>` |
 | UI port | **5090**, not 5080 |
 
-**Port 5090 is deliberate.** `AsposeNetDocumentProcessor` owns 5080 on this machine. When both used
-5080, `run.bat` opened a browser at the *other* application while this one failed to bind, and the
-bind error scrolled past unnoticed. `run.bat` now refuses to start if the port is taken and names
-the process holding it; pass a port to override (`run.bat 5091`).
 
 `d:\Storage\govdocs\zipfiles` holds the raw Digital Corpora set (1000 archives, 310.6 GB) if a
 non-extracted corpus is ever needed. The walker takes any folder; nothing assumes a layout.
