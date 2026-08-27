@@ -3,9 +3,15 @@
 @inject RunnerService Runner
 @inject NavigationManager Nav
 
-<h1>Live</h1>
+<h1>
+    Live
+    @if (Runner.IsRunning)
+    {
+        <span class="live-dot" title="Running"></span>
+    }
+</h1>
 
-@if (!Runner.IsRunning)
+@if (!Runner.IsRunning && live is null)
 {
     <div class="banner">
         No run in progress.
@@ -22,26 +28,240 @@
 else
 {
     <div class="toolbar">
-        <span class="status running">Running</span>
-        <button class="btn danger" @onclick="() => Runner.Cancel()">Cancel</button>
+        <span class="status @(Runner.IsRunning ? "running" : "completed")">
+            @(Runner.IsRunning ? "Running" : live?.Status ?? "Finished")
+        </span>
+        <strong>@(live?.Label ?? "run")</strong>
+        <span class="mono">@Format.Duration(elapsed)</span>
+        @if (Runner.IsRunning)
+        {
+            <button class="btn danger" @onclick="() => Runner.Cancel()">Cancel</button>
+        }
+        else if (Runner.ActiveSessionId is not null)
+        {
+            <a class="btn primary" href="@($"session/{Runner.ActiveSessionId}")">Open session</a>
+        }
         <span class="muted">The run continues if you close this page.</span>
     </div>
+
+    @* ---- progress ------------------------------------------------------- *@
+    <div class="progress-wrap">
+        <div class="progress-head">
+            <span class="progress-label">
+                @Format.Bytes(sourceDone) <span class="muted">of</span> @Format.Bytes(sourceTotal)
+            </span>
+            <span class="progress-pct">@Format.Percent(progress)</span>
+            <span class="muted eta">@etaText</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill @(Runner.IsRunning ? "animated" : "")" style="width:@(Pct(progress))"></div>
+        </div>
+        <div class="progress-sub muted">
+            @docsDone.ToString("N0") of @filesTotal.ToString("N0") documents
+            @if (errors > 0)
+            {
+                <span class="warn">· @errors.ToString("N0") extraction error(s)</span>
+            }
+        </div>
+    </div>
+
+    @* ---- headline tiles -------------------------------------------------- *@
+    <div class="tiles">
+        <div class="tile accent">
+            <div class="tile-label">Index / source</div>
+            <div class="tile-value @RatioClass(ratio)" key="@ratio.ToString("F3")">@Format.Percent(ratio)</div>
+            <div class="tile-sub">@Format.Bytes(indexBytes) written</div>
+        </div>
+        <div class="tile">
+            <div class="tile-label">Documents</div>
+            <div class="tile-value" key="@docsDone">@docsDone.ToString("N0")</div>
+            <div class="tile-sub">@throughputDocs.ToString("N1") /s</div>
+        </div>
+        <div class="tile">
+            <div class="tile-label">Throughput</div>
+            <div class="tile-value" key="@throughput.ToString("F1")">@throughput.ToString("F1")</div>
+            <div class="tile-sub">MB/s source</div>
+        </div>
+        <div class="tile">
+            <div class="tile-label">Vocabulary</div>
+            <div class="tile-value" key="@terms">@FormatCompact(terms)</div>
+            <div class="tile-sub">unique terms</div>
+        </div>
+        <div class="tile">
+            <div class="tile-label">Segments</div>
+            <div class="tile-value" key="@segments">@segments</div>
+            <div class="tile-sub">@Format.Bytes(headBytesEstimate) offset tables</div>
+        </div>
+        <div class="tile">
+            <div class="tile-label">Private bytes</div>
+            <div class="tile-value" key="@privateBytes">@Format.Bytes(privateBytes)</div>
+            <div class="tile-sub">peak @Format.Bytes(peakPrivate)</div>
+        </div>
+    </div>
+
+    @* ---- charts ---------------------------------------------------------- *@
+    @if (timeline.Count > 1)
+    {
+        <div class="charts">
+            @Chart("Index vs source", "#4c9aff",
+                   [.. timeline.Select(t => (double)t.IndexBytesOnDisk)],
+                   Format.Bytes(indexBytes),
+                   [.. timeline.Select(t => (double)t.SourceBytesConsumed)])
+
+            @Chart("Ratio over time", RatioColor(ratio),
+                   [.. timeline.Select(t => t.SourceBytesConsumed > 0 ? (double)t.IndexBytesOnDisk / t.SourceBytesConsumed * 100 : 0)],
+                   Format.Percent(ratio), null)
+
+            @Chart("Vocabulary", "#c08cf0",
+                   [.. timeline.Select(t => (double)t.EstimatedTermCount)],
+                   FormatCompact(terms), null)
+
+            @Chart("Private bytes", "#e0a23c",
+                   [.. timeline.Select(t => (double)t.PrivateBytes)],
+                   Format.Bytes(privateBytes),
+                   [.. timeline.Select(t => (double)t.LargeObjectHeapBytes)])
+        </div>
+        <p class="muted chart-note">
+            Solid line is the primary series; the faint line behind it is the comparison series
+            (source bytes, and Large Object Heap respectively). Each point is one committed batch.
+        </p>
+    }
+    else if (Runner.IsRunning)
+    {
+        <div class="charts-placeholder muted">
+            <span class="scanner"></span>
+            Charts appear after the second batch commits.
+        </div>
+    }
 }
 
-<pre class="log">@string.Join('\n', Runner.RecentLog)</pre>
+@* ---- log ---------------------------------------------------------------- *@
+<h2>Log</h2>
+<pre class="log" id="runlog">@string.Join('\n', Runner.RecentLog)</pre>
 
 @code {
     private Timer? timer;
+    private SessionRecord? live;
+    private List<TimelineSample> timeline = [];
+
+    private int filesTotal, docsDone, segments, errors;
+    private long sourceTotal, sourceDone, indexBytes, privateBytes, peakPrivate, terms, headBytesEstimate;
+    private double progress, ratio, elapsed, throughput, throughputDocs;
+    private string etaText = string.Empty;
 
     protected override void OnInitialized()
     {
         Runner.StateChanged += OnStateChanged;
-        // The log can move faster than a render is worth; poll on a slow timer instead of
-        // re-rendering on every single line.
-        timer = new Timer(_ => InvokeAsync(StateHasChanged), null, 1000, 1000);
+        Refresh();
+        // A 1 s tick keeps elapsed and the progress bar moving between batch commits, which on a
+        // 75 MB batch can be a minute apart. Rendering on every log line instead would be far more
+        // churn for no extra information.
+        timer = new Timer(_ => InvokeAsync(() => { Refresh(); StateHasChanged(); }), null, 1000, 1000);
     }
 
-    private void OnStateChanged() { }
+    private void OnStateChanged() => InvokeAsync(() => { Refresh(); StateHasChanged(); });
+
+    private void Refresh()
+    {
+        live = Runner.Live;
+        if (live is null)
+        {
+            return;
+        }
+
+        timeline = live.Timeline;
+        filesTotal = live.Corpus.FilesSelected;
+        sourceTotal = live.Corpus.SourceBytesSelected;
+        docsDone = live.Outcome.DocumentsAttempted;
+        sourceDone = live.Outcome.SourceBytesConsumed;
+        errors = live.Outcome.ExtractionErrors;
+        peakPrivate = live.Outcome.PeakPrivateBytes;
+
+        TimelineSample? last = timeline.Count > 0 ? timeline[^1] : null;
+        indexBytes = last?.IndexBytesOnDisk ?? 0;
+        segments = last?.SegmentCount ?? 0;
+        terms = last?.EstimatedTermCount ?? 0;
+        privateBytes = last?.PrivateBytes ?? 0;
+        headBytesEstimate = terms * 4 * Math.Max(1, segments);
+
+        progress = sourceTotal > 0 ? Math.Min(1, (double)sourceDone / sourceTotal) : 0;
+        ratio = sourceDone > 0 ? (double)indexBytes / sourceDone : 0;
+
+        elapsed = Runner.IsRunning && last is not null
+            ? Math.Max(last.ElapsedSeconds, (DateTime.UtcNow - live.StartedUtc).TotalSeconds)
+            : live.ElapsedSeconds > 0 ? live.ElapsedSeconds : (DateTime.UtcNow - live.StartedUtc).TotalSeconds;
+
+        throughput = elapsed > 0 ? sourceDone / 1024d / 1024d / elapsed : 0;
+        throughputDocs = elapsed > 0 ? docsDone / elapsed : 0;
+
+        // Remaining bytes at the rate achieved so far. Honest about being an extrapolation: it
+        // moves around early on, and format mix changes it as the run walks the corpus.
+        if (Runner.IsRunning && throughput > 0 && sourceTotal > sourceDone)
+        {
+            double remaining = (sourceTotal - sourceDone) / 1024d / 1024d / throughput;
+            etaText = $"~{Format.Duration(remaining)} remaining";
+        }
+        else
+        {
+            etaText = string.Empty;
+        }
+    }
+
+    private static string Pct(double fraction) =>
+        (fraction * 100).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string FormatCompact(long value) => value switch
+    {
+        >= 1_000_000_000 => (value / 1_000_000_000d).ToString("F2") + "B",
+        >= 1_000_000 => (value / 1_000_000d).ToString("F1") + "M",
+        >= 1_000 => (value / 1_000d).ToString("F1") + "k",
+        _ => value.ToString("N0"),
+    };
+
+    // The whole point of the tool is this number, so it is colour-coded against the expectation
+    // the customer stated: 10-33% good, up to 50% tolerable, above that is the problem case.
+    private static string RatioClass(double r) => r switch
+    {
+        <= 0 => "",
+        < 0.35 => "good",
+        < 0.55 => "warn",
+        _ => "bad",
+    };
+
+    private static string RatioColor(double r) => r switch
+    {
+        < 0.35 => "#4cc38a",
+        < 0.55 => "#e0a23c",
+        _ => "#e05c5c",
+    };
+
+    private RenderFragment Chart(
+        string title,
+        string color,
+        IReadOnlyList<double> series,
+        string current,
+        IReadOnlyList<double>? comparison) => @<div class="chart">
+        <div class="chart-head">
+            <span class="chart-title">@title</span>
+            <span class="chart-current" style="color:@color">@current</span>
+        </div>
+        <svg viewBox="0 0 300 60" preserveAspectRatio="none" class="spark">
+            <defs>
+                <linearGradient id="@($"g{title.GetHashCode():X}")" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="@color" stop-opacity="0.35" />
+                    <stop offset="100%" stop-color="@color" stop-opacity="0" />
+                </linearGradient>
+            </defs>
+            @if (comparison is { Count: > 1 })
+            {
+                <path d="@Sparkline.Path(comparison, 300, 60)" fill="none" stroke="#5a6474"
+                      stroke-width="1" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
+            }
+            <path d="@Sparkline.Area(series, 300, 60)" fill="@($"url(#g{title.GetHashCode():X})")" />
+            <path d="@Sparkline.Path(series, 300, 60)" fill="none" stroke="@color"
+                  stroke-width="2" vector-effect="non-scaling-stroke" class="spark-line" />
+        </svg>
+    </div>;
 
     public void Dispose()
     {
