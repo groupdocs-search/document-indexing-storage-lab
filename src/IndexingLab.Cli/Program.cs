@@ -21,9 +21,11 @@ try
     using JsonDocument document = JsonDocument.Parse(File.ReadAllText(configPath));
     JsonElement root = document.RootElement;
 
-    string sessionsPath = ArgValue(args, "--sessions")
-        ?? root.GetProperty("Lab").GetProperty("SessionsPath").GetString()
-        ?? Path.Combine(AppContext.BaseDirectory, "sessions");
+    string sessionsPath = LabPaths.Resolve(
+        ArgValue(args, "--sessions")
+            ?? Environment.GetEnvironmentVariable("INDEXING_LAB_SESSIONS")
+            ?? root.GetProperty("Lab").GetProperty("SessionsPath").GetString()
+            ?? "sessions");
 
     string profileName = args.FirstOrDefault(a => !a.StartsWith("--")) ?? "default";
 
@@ -46,6 +48,21 @@ try
     string label = profile.TryGetProperty("Label", out JsonElement l)
         ? l.GetString() ?? profileName
         : profileName;
+
+    // Shipped profiles carry relative paths and no corpus, so a fresh clone runs anywhere and
+    // nobody inherits someone else's drive layout. Point them at real folders here.
+    configuration.CorpusRootPath = Environment.GetEnvironmentVariable("INDEXING_LAB_CORPUS")
+        ?? configuration.CorpusRootPath;
+
+    if (string.IsNullOrWhiteSpace(configuration.CorpusRootPath))
+    {
+        Console.Error.WriteLine("ERROR: no corpus folder configured.");
+        Console.Error.WriteLine("  Set INDEXING_LAB_CORPUS to a folder of documents, or fill in");
+        Console.Error.WriteLine($"  CorpusRootPath for the '{profileName}' profile in appsettings.json.");
+        return 1;
+    }
+
+    configuration.IndexFolderPath = LabPaths.Resolve(configuration.IndexFolderPath);
 
     SessionStore store = new(sessionsPath);
     Console.WriteLine($"Sessions folder : {store.RootPath}");
