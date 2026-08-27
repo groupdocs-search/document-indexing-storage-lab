@@ -106,7 +106,8 @@ public sealed class MemorySampler : IDisposable
         int documentsIndexed,
         long sourceBytesConsumed,
         long indexBytesOnDisk,
-        int segmentCount)
+        int segmentCount,
+        long estimatedTermCount = 0)
     {
         Sample();
 
@@ -122,6 +123,7 @@ public sealed class MemorySampler : IDisposable
             ManagedHeapBytes = GC.GetTotalMemory(forceFullCollection: false),
             PrivateBytes = LastPrivateBytes,
             LargeObjectHeapBytes = GetLargeObjectHeapBytes(),
+            EstimatedTermCount = estimatedTermCount,
         };
     }
 
