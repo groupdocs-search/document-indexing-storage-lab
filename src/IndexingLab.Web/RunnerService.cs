@@ -20,6 +20,7 @@ public sealed class RunnerService : IDisposable
     private CancellationTokenSource? cancellation;
     private Task? runTask;
     private string? activeSessionId;
+    private volatile SessionRecord? live;
 
     public RunnerService(SessionStore store, ILogger<RunnerService> logger)
     {
@@ -32,6 +33,12 @@ public sealed class RunnerService : IDisposable
     public bool IsRunning => runTask is { IsCompleted: false };
 
     public string? ActiveSessionId => activeSessionId;
+
+    /// <summary>
+    /// The in-flight session, updated after every batch. The UI renders metrics from this instead
+    /// of parsing the log, so the log can stay purely human-readable.
+    /// </summary>
+    public SessionRecord? Live => live;
 
     /// <summary>Fires whenever the runner logs a line, so the UI can refresh without polling hard.</summary>
     public event Action? StateChanged;
@@ -46,6 +53,7 @@ public sealed class RunnerService : IDisposable
         }
 
         logLines.Clear();
+        live = null;
         cancellation = new CancellationTokenSource();
         CancellationToken token = cancellation.Token;
 
@@ -55,7 +63,11 @@ public sealed class RunnerService : IDisposable
         runTask = Task.Run(
             () =>
             {
-                IndexRunner runner = new(store, Log);
+                IndexRunner runner = new(store, Log, session =>
+                {
+                    live = session;
+                    StateChanged?.Invoke();
+                });
                 SessionRecord session = runner.Run(configuration, label, token);
                 activeSessionId = session.Id;
                 Log($"Session {session.Id} finished with status {session.Status}.");
