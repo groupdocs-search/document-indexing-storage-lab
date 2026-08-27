@@ -29,7 +29,7 @@ source size?* — and to keep answering it across future GroupDocs.Search releas
 
 ## Measured
 
-A 199 MB stratified sample of `d:\Storage\Aspose` (mixed .xls/.ppt/.doc/.pdf/.txt/.html), GroupDocs.Search
+A 199 MB stratified sample of `d:\Storage` (mixed .xls/.ppt/.doc/.pdf/.txt/.html), GroupDocs.Search
 26.8.0, .NET 10, Release:
 
 | | before `Optimize()` | after |
@@ -53,10 +53,6 @@ A 199 MB stratified sample of `d:\Storage\Aspose` (mixed .xls/.ppt/.doc/.pdf/.tx
 - **Web host would not start.** Its `appsettings.json` contained unescaped Windows path separators,
   so the configuration failed to parse. The project built cleanly the whole time, which is why it
   went unnoticed: nothing had actually launched it.
-- **Port collision with AsposeNetDocumentProcessor.** Both used 5080. `run.bat` waits for the port
-  to answer and cannot tell whose application replied, so it opened a browser at the other tool
-  while this one failed to bind. Moved to 5090, and `run.bat` now refuses to start when the port is
-  occupied, naming the process that holds it.
 
 ## Known limits
 
