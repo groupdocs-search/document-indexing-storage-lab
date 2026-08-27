@@ -15,7 +15,7 @@ namespace IndexingLab.Core;
 public sealed class SessionRecord
 {
     /// <summary>Increment when the shape changes so old sessions stay readable.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -229,6 +229,13 @@ public sealed class TimelineSample
     public long PrivateBytes { get; set; }
 
     public long LargeObjectHeapBytes { get; set; }
+
+    /// <summary>
+    /// Vocabulary as of this batch, from the largest <c>.head</c> file divided by four. Sampled
+    /// live because vocabulary growth is the single best early warning that a corpus is producing
+    /// junk terms — it flattens for clean text and climbs without bound for hex and base64.
+    /// </summary>
+    public long EstimatedTermCount { get; set; }
 }
 
 /// <summary>
