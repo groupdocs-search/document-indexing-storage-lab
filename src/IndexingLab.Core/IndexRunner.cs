@@ -17,15 +17,21 @@ public sealed class IndexRunner
 
     private readonly SessionStore store;
     private readonly Action<string>? log;
+    private readonly Action<SessionRecord>? onProgress;
 
     private readonly object errorSync = new();
     private int errorCount;
     private readonly List<string> firstErrors = [];
 
-    public IndexRunner(SessionStore store, Action<string>? log = null)
+    /// <param name="onProgress">
+    /// Invoked with the live session after every batch. The UI reads structured metrics from this
+    /// rather than parsing the log, which is why the log stays purely human-readable.
+    /// </param>
+    public IndexRunner(SessionStore store, Action<string>? log = null, Action<SessionRecord>? onProgress = null)
     {
         this.store = store;
         this.log = log;
+        this.onProgress = onProgress;
     }
 
     public SessionRecord Run(RunConfiguration configuration, string label, CancellationToken cancellationToken)
@@ -56,6 +62,7 @@ public sealed class IndexRunner
             CorpusSelection selection = CorpusWalker.Select(configuration, cancellationToken);
             session.Corpus = selection.Fingerprint;
             store.Save(session);
+            onProgress?.Invoke(session);
 
             log?.Invoke($"Selected {selection.Files.Count:N0} files, {Format.Bytes(selection.TotalBytes)}");
 
@@ -73,6 +80,18 @@ public sealed class IndexRunner
         {
             session.Status = SessionStatus.Cancelled;
             log?.Invoke("Cancelled.");
+
+            // Analyse whatever was built before stopping. Cancellation used to discard this,
+            // which meant abandoning a multi-hour run also threw away its single most valuable
+            // output - and the index is sitting on disk either way, so it costs a folder walk.
+            if (session.StorageBeforeOptimize is null && Directory.Exists(configuration.IndexFolderPath))
+            {
+                session.StorageBeforeOptimize = IndexStorageAnalyzer.Analyze(
+                    configuration.IndexFolderPath,
+                    session.Outcome.SourceBytesConsumed,
+                    configuration.UseTextStorage);
+                LogBreakdown("at cancellation", session.StorageBeforeOptimize);
+            }
         }
         catch (Exception exception)
         {
@@ -93,6 +112,7 @@ public sealed class IndexRunner
             }
 
             store.Save(session);
+            onProgress?.Invoke(session);
         }
 
         return session;
@@ -166,6 +186,7 @@ public sealed class IndexRunner
 
             long indexBytes = IndexStorageAnalyzer.MeasureIndexBytes(configuration.IndexFolderPath);
             int segmentCount = IndexStorageAnalyzer.CountSegments(configuration.IndexFolderPath);
+            long termCount = IndexStorageAnalyzer.EstimateTermCount(configuration.IndexFolderPath);
 
             session.Timeline.Add(sampler.Capture(
                 batches,
@@ -173,11 +194,23 @@ public sealed class IndexRunner
                 documentsIndexed,
                 sourceBytesConsumed,
                 indexBytes,
-                segmentCount));
+                segmentCount,
+                termCount));
 
             session.Outcome.DocumentsAttempted = documentsIndexed;
             session.Outcome.BatchesCommitted = batches;
             session.Outcome.SourceBytesConsumed = sourceBytesConsumed;
+            session.Outcome.PeakPrivateBytes = sampler.PeakPrivateBytes;
+            session.Outcome.TotalAllocatedBytes = sampler.TotalAllocatedBytes;
+            session.Outcome.ThroughputMBPerSecond = stopwatch.Elapsed.TotalSeconds > 0
+                ? sourceBytesConsumed / 1024d / 1024d / stopwatch.Elapsed.TotalSeconds
+                : 0;
+            lock (errorSync)
+            {
+                session.Outcome.ExtractionErrors = errorCount;
+            }
+
+            onProgress?.Invoke(session);
 
             log?.Invoke(
                 $"batch {batches} | docs {documentsIndexed:N0} | src {Format.Bytes(sourceBytesConsumed)} | " +
