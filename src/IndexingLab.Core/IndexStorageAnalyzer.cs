@@ -88,14 +88,18 @@ public static class IndexStorageAnalyzer
                     breakdown.TermDictionaryBytes += length;
                     break;
                 default:
-                    if (name.EndsWith(".term", StringComparison.OrdinalIgnoreCase) ||
-                        name.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
-                    {
-                        breakdown.DictionaryFileBytes += length;
-                    }
-                    else if (IsTextArchive(path, indexFolderPath))
+                    // Location before extension: the stored-text archive is numbered .dat files
+                    // under "Source", so an extension test would classify every one of them as a
+                    // dictionary side-file. On a real 20 GB run that silently moved 473 MB into
+                    // the index total and left the extracted-text ratio unavailable.
+                    if (IsTextArchive(path, indexFolderPath))
                     {
                         breakdown.TextStorageBytes += length;
+                    }
+                    else if (name.EndsWith(".term", StringComparison.OrdinalIgnoreCase) ||
+                             name.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
+                    {
+                        breakdown.DictionaryFileBytes += length;
                     }
                     else
                     {
@@ -137,10 +141,21 @@ public static class IndexStorageAnalyzer
         return breakdown;
     }
 
+    /// <summary>
+    /// The stored-text archive sits in a "Source" subfolder as numbered .dat files. Getting this
+    /// wrong is expensive rather than cosmetic: those files would otherwise be counted as index
+    /// data, inflating the total and the size ratio, and the index-vs-extracted-text ratio would
+    /// silently disappear because TextStorageBytes stayed zero. Measured on a real run, the
+    /// archive was 473 MB that did not belong in the index figure.
+    /// </summary>
     private static bool IsTextArchive(string path, string indexFolderPath)
     {
         string relative = Path.GetRelativePath(indexFolderPath, path);
-        return relative.Contains("text", StringComparison.OrdinalIgnoreCase);
+        string? topFolder = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .FirstOrDefault();
+
+        return string.Equals(topFolder, "Source", StringComparison.OrdinalIgnoreCase)
+            || relative.Contains("text", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SegmentDetail GetSegment(Dictionary<int, SegmentDetail> segments, int index)
@@ -176,6 +191,36 @@ public static class IndexStorageAnalyzer
         }
 
         return total;
+    }
+
+    /// <summary>
+    /// Vocabulary estimate without walking the whole index: only the <c>.head</c> files are
+    /// stat-ed, and the largest divided by four is the current term count.
+    /// </summary>
+    public static long EstimateTermCount(string indexFolderPath)
+    {
+        if (!Directory.Exists(indexFolderPath))
+        {
+            return 0;
+        }
+
+        long largest = 0;
+        foreach (string path in Directory.EnumerateFiles(indexFolderPath, "index*.head", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                long length = new FileInfo(path).Length;
+                if (length > largest)
+                {
+                    largest = length;
+                }
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        return largest / BytesPerTermOffset;
     }
 
     public static int CountSegments(string indexFolderPath)
