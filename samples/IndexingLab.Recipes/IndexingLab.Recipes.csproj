@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>IndexingLab.Recipes</RootNamespace>
+    <AssemblyName>IndexingLab.Recipes</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GroupDocs.Search" />
+    <ProjectReference Include="..\..\src\IndexingLab.Core\IndexingLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>

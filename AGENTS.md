@@ -34,10 +34,13 @@ test.bat                              # offline test suite
 run-profile.bat                       # list headless profiles
 run-profile.bat smoke                 # 2 GB sanity run
 run-profile.bat corpora-30pct         # the real 90 GB run
+recipes.bat                           # list the runnable recipes
+recipes.bat diagnose <indexFolder>    # read-only index breakdown, safe on a live folder
 
 dotnet test tests/IndexingLab.Tests                        # same as test.bat
 dotnet run --project src/IndexingLab.Web -c Release
 dotnet run --project src/IndexingLab.Cli -c Release -- smoke
+dotnet run --project samples/IndexingLab.Recipes -c Release -- <recipe> [args]
 ```
 
 The test suite needs no corpus, no licence and no network. It builds synthetic index folders in the

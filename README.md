@@ -54,23 +54,34 @@ gives vocabulary size for free (largest `.head` ÷ 4) and makes the recoverable 
 
 ## First results
 
-A 199 MB stratified sample of `d:\Storage` (mixed .xls/.ppt/.doc/.pdf/.txt/.html):
+**20 GB of Digital Corpora**, 29,031 documents, GroupDocs.Search 26.8.0, Server GC, one `Optimize()`
+at the end. Session `20260826-211200-b87d4c`.
 
 | | before `Optimize()` | after |
 |---|---:|---:|
-| Index total | 30.4 MB | **25.5 MB** |
-| Ratio to source | 15.3% | **12.8%** |
-| Segments | 4 | 1 |
-| `.head` | 3.22 MB | 1.17 MB |
+| Index total | 19.85 GB | **2.54 GB** |
+| Ratio to source | **99.3%** | 12.7% |
+| Segments | 365 (104 empty) | 1 |
+| Term offsets (`.head`) | **16.71 GB** (84.2%) | 116.4 MB (4.5%) |
+| Vocabulary | 30,500,557 terms | |
+| Peak private bytes | 26.15 GB | |
+| Total allocated | 3.84 TB | |
 
-Two things already worth knowing:
+Four things worth knowing:
 
-- **`Optimize()` recovered exactly the predicted 2.05 MB.** `RecoverableTermOffsetBytes` is computed
-  as `TermOffsetBytes - 4 × vocabulary`, and the measured saving matched it to the byte.
-- **The size ratio is dominated by the corpus mix, not by index efficiency.** The same tool on an
-  HTML-only slice gave **57.9%**; the mixed slice gave **15.3%**. Text-dense formats produce a lot of
-  index per byte of source; PDFs and presentations produce very little. Any "index as a % of source"
-  figure is meaningless without knowing the format mix behind it.
+- **An unoptimised index was 99.3% the size of the corpus that produced it** — and 84% of it was not
+  index data at all. Each `index{N}.head` is a flat `int[]` indexed by term id, so every segment
+  carries four bytes for every term *in the whole index*, present in that segment or not. At 365
+  segments and 30.5M terms that is 16.71 GB of mostly `-1` padding.
+- **The prediction was exact.** `RecoverableTermOffsetBytes` is computed before the merge as
+  `TermOffsetBytes - 4 × vocabulary`; it said 16.60 GB and `.head` actually shrank by 16.59 GB.
+- **Segment count is not controllable from the outside.** 260 committed batches produced 365
+  segments — the term collector flushes mid-batch once its buffers fill, so batching does not bound
+  segment count and 104 of the segments came out empty.
+- **The size ratio is dominated by the corpus mix, not by index efficiency.** An HTML-only slice gave
+  **57.9%**; a mixed .xls/.ppt/.doc/.pdf slice gave **15.3%**. Any "index as a % of source" figure is
+  meaningless without the format mix behind it. In the run above, stored text is 51% of the final
+  2.54 GB — turn it off and the index roughly halves.
 
 ## Running it
 
@@ -144,6 +155,35 @@ reads, so CLI runs appear in the UI list.
 | `corpora-20pct` / `corpora-30pct` | The real runs: 60 GB / 90 GB baseline |
 | `digits-as-separators` | Same slice with `0123456789+/=` as separators — vocabulary reduction |
 | `text-storage-ratio` | Text storage on, to measure extracted-text volume |
+
+## Recipes
+
+`samples/IndexingLab.Recipes` is four runnable answers to the problems this lab surfaces. Each one is
+a single self-contained file, and each prints numbers rather than asserting anything.
+
+```
+recipes.bat                                             usage
+recipes.bat diagnose <indexFolder>                      read-only: what an index is made of
+recipes.bat progress <corpus> <indexFolder>             Add/Optimize progress + async cancellable merge
+recipes.bat sharded  <corpus> <indexFolder> [perShard]  many small indexes, queried as one
+recipes.bat alphabet <corpus> <indexFolder>             vocabulary reduction, measured before/after
+```
+
+- **`diagnose`** never constructs an `Index` — it reads file sizes only, so it costs nothing, cannot
+  modify anything, and is safe to point at a production folder while a service is using it. It
+  reports vocabulary, segment count and how much a merge would recover.
+- **`progress`** wires `OperationProgressChanged` and `OptimizationProgressChanged`, then runs
+  `Optimize()` with `IsAsync = true` and a `Cancellation`. Both events already ship in the product;
+  this is about six lines of wiring, and it is what makes "optimise rarely" an option you can offer
+  users instead of an unexplained freeze.
+- **`sharded`** builds N small indexes, disposing each before starting the next, then federates the
+  query through an `IndexRepository`. Search semantics are unchanged.
+- **`alphabet`** indexes the same documents twice — as-is and with `0123456789+/=` reclassified as
+  separators — and prints the difference. On a 40-file numeric-heavy sample it cut vocabulary
+  149,850 → 2,676 terms and the term dictionary 794 KB → 19 KB. That magnitude is a property of that
+  corpus, not a general promise, which is the reason the recipe measures instead of claiming; run it
+  on your own subset. It changes tokenisation, so it needs a reindex and it changes what queries
+  match.
 
 ## Sessions
 
